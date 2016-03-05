@@ -74,34 +74,33 @@ data Project = Project
 --
 -- TODO : Why do we care about the results here...? If we do care, it should
 -- relate to a Configuration (compile, archive, etc..).
-graphGradleDeps :: GradleDependencySpec -> IO (Either TC.TransError [[TC.Result]])
+graphGradleDeps :: GradleDependencySpec -> IO (Either TC.TransError ())
 graphGradleDeps gdeps = hardConn >>= \conn -> do
-    result <- n4jTransaction conn $ do
+    n4jTransaction conn $ do
         -- Currently a node name is the project name and version combined. These should really
         -- be two properties
         let proj = Project (gDepName gdeps <> ":" <> (textOrUndefined $ gDepVersion gdeps))
 
         TC.cypher ("MERGE ( n:PROJECT { name : {name}} )") (project2map proj)
-        mapM (\config -> createAndRelate proj (traceShow (confName config) $ confName config)
+        mapM_ (\config -> createAndRelate proj (traceShow (confName config) $ confName config)
             (confDeps config)) $ gDepConfigs gdeps
-    return result
 
 
 -- | Create the top-level direct dependency nodes and relate them to the root node.
-createAndRelate :: Project -> T.Text -> Maybe [Dependency] -> TC.Transaction [TC.Result]
+createAndRelate :: Project -> T.Text -> Maybe [Dependency] -> TC.Transaction ()
 createAndRelate p relationName mdeps = case mdeps of
-    Nothing   -> error "ERRRORORORORORO!!!!" -- FIXME: Remove this crap and be pure!
+    Nothing   -> pure ()
     Just deps ->
         -- FIXME : Need to sanitize relation names correctly!
         let rName = T.replace "-" "" relationName
-        in  mapM (relateProjectAndDep p rName) $ deps
+        in  mapM_ (relateProjectAndDep p rName) $ deps
 
 
 -- Relate a project and its direct dependency.
-relateProjectAndDep :: Project -> T.Text -> Dependency -> TC.Transaction TC.Result
+relateProjectAndDep :: Project -> T.Text -> Dependency -> TC.Transaction ()
 relateProjectAndDep p relationName d = do
     TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") (dep2map d)
-    res <- TC.cypher (
+    TC.cypher (
         "MATCH (a:PROJECT),(b:PROJECT)"
         <> "WHERE a.name = {pName}"
         <> "AND b.name = {dName}"
@@ -111,11 +110,9 @@ relateProjectAndDep p relationName d = do
                 , (T.pack "dName", TC.newparam $ depName d)
                 , (T.pack "relationName", TC.newparam $ relationName)
                 ]
-    res2 <- case depChildren d of
-        Just deps -> graphTransitiveDeps (projName p) relationName d deps
+    case depChildren d of
+        Just deps -> graphTransitiveDeps (projName p) relationName d deps >> pure ()
         Nothing   -> pure ()
-
-    return res
 
 
 -- | Graph the projects transitive dependencies.
@@ -174,4 +171,6 @@ n4jTransaction :: Neo.Connection -> TC.Transaction a ->  IO (Either TC.TransErro
 n4jTransaction conn action = flip Neo.runNeo4j conn $
     TC.runTransaction action
 
+-- Hardcode the connection details for now.
+-- FIXME : This should be picked up from external configuration.
 hardConn = (Neo.newAuthConnection (TE.encodeUtf8 "172.17.0.3") 7474 (TE.encodeUtf8 "neo4j", TE.encodeUtf8 "test"))
