@@ -99,19 +99,15 @@ createAndRelate p relationName mdeps = case mdeps of
 -- Relate a project and its direct dependency.
 relateProjectAndDep :: Project -> T.Text -> Dependency -> TC.Transaction ()
 relateProjectAndDep p relationName d = do
-    TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") (dep2map d)
-    TC.cypher (
-        "MATCH (a:PROJECT),(b:PROJECT)"
-        <> "WHERE a.name = {pName}"
-        <> "AND b.name = {dName}"
-        <> "CREATE UNIQUE (a)-[r:" <> relationName <> "]->(b)"
-        <> "RETURN r") $ M.fromList [
-                (T.pack "pName", TC.newparam $ projName p)
-                , (T.pack "dName", TC.newparam $ depName d)
-                , (T.pack "relationName", TC.newparam $ relationName)
-                ]
+    let pName = projName p
+    let dName = depName d
+    TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") $
+        M.fromList [
+            (T.pack "name", TC.newparam pName)
+        ]
+    createRelationship pName dName relationName
     case depChildren d of
-        Just deps -> graphTransitiveDeps (projName p) relationName d deps >> pure ()
+        Just deps -> graphTransitiveDeps pName relationName d deps >> pure ()
         Nothing   -> pure ()
 
 
@@ -133,17 +129,7 @@ graphTransitiveDeps' :: T.Text -> T.Text -> Dependency -> [Dependency] -> TC.Tra
 graphTransitiveDeps' _ _ _ [] = return ()
 graphTransitiveDeps' pname cname parent (dep:deps) = do
     TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") (dep2map dep)
-    TC.cypher (
-        "MATCH (a:PROJECT),(b:PROJECT)"
-        <> "WHERE a.name = {parentName}"
-        <> "AND b.name = {nextName}"
-        <> "CREATE UNIQUE (a)-[r:" <> cname <> "]->(b)"
-        <> "RETURN r") $ M.fromList [
-                (T.pack "parentName", TC.newparam $ depName parent)
-                , (T.pack "nextName", TC.newparam $ depName dep)
-                , (T.pack "relationName", TC.newparam $ cname)
-                ]
-
+    createRelationship (depName parent) (depName dep) cname
     -- If this dependency has children graph them.
     case depChildren dep of
         Just tdeps -> graphTransitiveDeps' pname cname dep tdeps
@@ -153,6 +139,19 @@ graphTransitiveDeps' pname cname parent (dep:deps) = do
 
 
 -- Helpers
+createRelationship :: T.Text -> T.Text -> T.Text -> TC.Transaction ()
+createRelationship from to relation = do
+    TC.cypher ("MATCH (a:PROJECT),(b:PROJECT)"
+        <> "WHERE a.name = {pName}"
+        <> "AND b.name = {dName}"
+        <> "CREATE UNIQUE (a)-[r:" <> relation <> "]->(b)"
+        <> "RETURN r") $ M.fromList [
+                (T.pack "pName", TC.newparam $ from)
+                , (T.pack "dName", TC.newparam $ to)
+                , (T.pack "relationName", TC.newparam $ relation)
+                ]
+    pure ()
+
 project2map project =
     let pName = projName project
     in  M.fromList [
