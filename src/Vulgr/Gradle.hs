@@ -13,7 +13,6 @@ import qualified Data.Text.Encoding as TE
 import qualified Database.Neo4j as Neo
 import qualified Database.Neo4j.Transactional.Cypher as TC
 
-
 import Debug.Trace
 
 data GradleDependencySpec = GradleDependencySpec
@@ -92,7 +91,10 @@ graphGradleDeps gdeps = hardConn >>= \conn -> do
 createAndRelate :: Project -> T.Text -> Maybe [Dependency] -> TC.Transaction [TC.Result]
 createAndRelate p relationName mdeps = case mdeps of
     Nothing   -> error "ERRRORORORORORO!!!!" -- FIXME: Remove this crap and be pure!
-    Just deps -> mapM (relateProjectAndDep p relationName) $ deps
+    Just deps ->
+        -- FIXME : Need to sanitize relation names correctly!
+        let rName = T.replace "-" "" relationName
+        in  mapM (relateProjectAndDep p rName) $ deps
 
 
 -- Relate a project and its direct dependency.

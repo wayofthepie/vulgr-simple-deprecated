@@ -55,5 +55,5 @@ graphDeps gdeps = do
     eitherResult <- liftIO $ graphGradleDeps gdeps
     case eitherResult of
         Right _ -> pure ("Created dependency graph for ")
-        Left _  -> pure "Error...!"
+        Left err  -> pure $ (fst err) <> " : " <> (snd err)
 
