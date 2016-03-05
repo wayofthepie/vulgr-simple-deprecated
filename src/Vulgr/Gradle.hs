@@ -72,18 +72,30 @@ data Project = Project
 --
 -- TODO : Abstract to a type class for operation with different build tools like
 -- maven etc...
+--
+-- TODO : Why do we care about the results here...? If we do care, it should
+-- relate to a Configuration (compile, archive, etc..).
 graphGradleDeps :: GradleDependencySpec -> IO (Either TC.TransError [[TC.Result]])
-graphGradleDeps gdeps = hardConn >>= \conn -> n4jTransaction conn $ do
-    let proj = Project (gDepName gdeps <> ":" <> (textOrUndefined $ gDepVersion gdeps))
-    res <- TC.cypher ("MERGE ( n:PROJECT { name : {name}} )") (project2map proj)
-    ress <- mapM (\config -> createAndRelate proj (traceShow (confName config) $ confName config) (confDeps config)) $ gDepConfigs gdeps
-    return $ ress
+graphGradleDeps gdeps = hardConn >>= \conn -> do
+    result <- n4jTransaction conn $ do
+        -- Currently a node name is the project name and version combined. These should really
+        -- be two properties
+        let proj = Project (gDepName gdeps <> ":" <> (textOrUndefined $ gDepVersion gdeps))
 
+        TC.cypher ("MERGE ( n:PROJECT { name : {name}} )") (project2map proj)
+        mapM (\config -> createAndRelate proj (traceShow (confName config) $ confName config)
+            (confDeps config)) $ gDepConfigs gdeps
+    return result
+
+
+-- | Create the top-level direct dependency nodes and relate them to the root node.
 createAndRelate :: Project -> T.Text -> Maybe [Dependency] -> TC.Transaction [TC.Result]
 createAndRelate p relationName mdeps = case mdeps of
-    Nothing   -> error "ERRRORORORORORO!!!!" -- FIXME: WTF is this doing here
+    Nothing   -> error "ERRRORORORORORO!!!!" -- FIXME: Remove this crap and be pure!
     Just deps -> mapM (relateProjectAndDep p relationName) $ deps
 
+
+-- Relate a project and its direct dependency.
 relateProjectAndDep :: Project -> T.Text -> Dependency -> TC.Transaction TC.Result
 relateProjectAndDep p relationName d = do
     TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") (dep2map d)
@@ -91,14 +103,14 @@ relateProjectAndDep p relationName d = do
         "MATCH (a:PROJECT),(b:PROJECT)"
         <> "WHERE a.name = {pName}"
         <> "AND b.name = {dName}"
-        <> "CREATE UNIQUE (a)-[r:DEPENDS_ON {config:[{relationName}]}]->(b)"
+        <> "CREATE UNIQUE (a)-[r:DependsOn {config:[{relationName}]}]->(b)"
         <> "RETURN r") $ M.fromList [
                 (T.pack "pName", TC.newparam $ projName p)
                 , (T.pack "dName", TC.newparam $ depName d)
                 , (T.pack "relationName", TC.newparam $ relationName)
                 ]
 
-
+-- Helpers
 project2map project =
     let pName = projName project
     in  M.fromList [
@@ -107,7 +119,6 @@ project2map project =
 
 dep2map dep = project2map $ Project (depName dep)
 
--- Helpers
 textOrUndefined :: Maybe T.Text -> T.Text
 textOrUndefined maybeTxt = case maybeTxt of
     Just txt -> txt
