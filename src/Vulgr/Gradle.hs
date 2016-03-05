@@ -99,16 +99,59 @@ createAndRelate p relationName mdeps = case mdeps of
 relateProjectAndDep :: Project -> T.Text -> Dependency -> TC.Transaction TC.Result
 relateProjectAndDep p relationName d = do
     TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") (dep2map d)
-    TC.cypher (
+    res <- TC.cypher (
         "MATCH (a:PROJECT),(b:PROJECT)"
         <> "WHERE a.name = {pName}"
         <> "AND b.name = {dName}"
-        <> "CREATE UNIQUE (a)-[r:DependsOn {config:[{relationName}]}]->(b)"
+        <> "CREATE UNIQUE (a)-[r:" <> relationName <> "]->(b)"
         <> "RETURN r") $ M.fromList [
                 (T.pack "pName", TC.newparam $ projName p)
                 , (T.pack "dName", TC.newparam $ depName d)
                 , (T.pack "relationName", TC.newparam $ relationName)
                 ]
+    res2 <- case depChildren d of
+        Just deps -> graphTransitiveDeps (projName p) relationName d deps
+        Nothing   -> pure ()
+
+    return res
+
+
+-- | Graph the projects transitive dependencies.
+--
+-- Currently this works as follows:
+--  1. The list of dependencies are the dependencies of the parent depencency
+--     which is a direct dfependency of the given project in the given configuration.
+--  2. We recursively relate dependencies with their children with an edge corresponding
+--     to the gradle configuration (compile, runtime etc...).
+--
+-- graphTransitiveDeps projectName configName parentDep deps
+--
+graphTransitiveDeps :: T.Text -> T.Text -> Dependency -> [Dependency] -> TC.Transaction ()
+graphTransitiveDeps projectName configName parent deps =
+    graphTransitiveDeps' projectName configName parent deps
+
+graphTransitiveDeps' :: T.Text -> T.Text -> Dependency -> [Dependency] -> TC.Transaction ()
+graphTransitiveDeps' _ _ _ [] = return ()
+graphTransitiveDeps' pname cname parent (dep:deps) = do
+    TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") (dep2map dep)
+    TC.cypher (
+        "MATCH (a:PROJECT),(b:PROJECT)"
+        <> "WHERE a.name = {parentName}"
+        <> "AND b.name = {nextName}"
+        <> "CREATE UNIQUE (a)-[r:" <> cname <> "]->(b)"
+        <> "RETURN r") $ M.fromList [
+                (T.pack "parentName", TC.newparam $ depName parent)
+                , (T.pack "nextName", TC.newparam $ depName dep)
+                , (T.pack "relationName", TC.newparam $ cname)
+                ]
+
+    -- If this dependency has children graph them.
+    case depChildren dep of
+        Just tdeps -> graphTransitiveDeps' pname cname dep tdeps
+        Nothing    -> pure ()
+
+    graphTransitiveDeps' pname cname parent deps
+
 
 -- Helpers
 project2map project =
