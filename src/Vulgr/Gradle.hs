@@ -103,7 +103,7 @@ relateProjectAndDep p relationName d = do
     let dName = depName d
     TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") $
         M.fromList [
-            (T.pack "name", TC.newparam pName)
+            (T.pack "name", TC.newparam dName)
         ]
     createRelationship pName dName relationName
     case depChildren d of
@@ -140,7 +140,7 @@ graphTransitiveDeps' pname cname parent (dep:deps) = do
 
 -- Helpers
 createRelationship :: T.Text -> T.Text -> T.Text -> TC.Transaction ()
-createRelationship from to relation = do
+createRelationship from to relation = traceShow ("Creating rel for " <> from <> " " <> relation <>" " <> to) $ do
     TC.cypher ("MATCH (a:PROJECT),(b:PROJECT)"
         <> "WHERE a.name = {pName}"
         <> "AND b.name = {dName}"
