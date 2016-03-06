@@ -105,7 +105,7 @@ relateProjectAndDep p relationName d = do
         M.fromList [
             (T.pack "name", TC.newparam dName)
         ]
-    createRelationship pName dName relationName
+    createRelationship pName pName dName relationName
     case depChildren d of
         Just deps -> graphTransitiveDeps pName relationName d deps >> pure ()
         Nothing   -> pure ()
@@ -129,7 +129,7 @@ graphTransitiveDeps' :: T.Text -> T.Text -> Dependency -> [Dependency] -> TC.Tra
 graphTransitiveDeps' _ _ _ [] = return ()
 graphTransitiveDeps' pname cname parent (dep:deps) = do
     TC.cypher ("MERGE ( n:PROJECT { name : {name} } )") (dep2map dep)
-    createRelationship (depName parent) (depName dep) cname
+    createRelationship pname (depName parent) (depName dep) cname
     -- If this dependency has children graph them.
     case depChildren dep of
         Just tdeps -> graphTransitiveDeps' pname cname dep tdeps
@@ -139,18 +139,36 @@ graphTransitiveDeps' pname cname parent (dep:deps) = do
 
 
 -- Helpers
-createRelationship :: T.Text -> T.Text -> T.Text -> TC.Transaction ()
-createRelationship from to relation = traceShow ("Creating rel for " <> from <> " " <> relation <>" " <> to) $ do
+createRelationship :: T.Text -> T.Text -> T.Text -> T.Text -> TC.Transaction ()
+createRelationship projectName from to relation = traceShow ("Creating rel for " <> projectName <> from <> " " <> relation <>" " <> to) $ do
+
+
+    -- Create the relationship between the two nodes. Merge here ensures
+    -- we don't overwrite an existing relationship.
     TC.cypher ("MATCH (a:PROJECT),(b:PROJECT)"
-        <> "WHERE a.name = {pName}"
-        <> "AND b.name = {dName}"
-        <> "CREATE UNIQUE (a)-[r:" <> relation <> "]->(b)"
+        <> "WHERE a.name = {from} AND b.name = {to}"
+        <> "MERGE (a)-[r:DependsOn{project:{projectName}}]->(b)"
         <> "RETURN r") $ M.fromList [
-                (T.pack "pName", TC.newparam $ from)
-                , (T.pack "dName", TC.newparam $ to)
+                (T.pack "from", TC.newparam $ from)
+                , (T.pack "to", TC.newparam $ to)
+                , (T.pack "projectName", TC.newparam $ projectName)
+                ]
+
+    -- Add the relationship name to the properties of the relationship.
+    -- This is an array of all the ways the parent depends on the child.
+    TC.cypher ("MATCH (a:PROJECT)-[r:DependsOn]->(b:PROJECT)"
+        <> "WHERE a.name = {from} AND b.name = {to}"
+        <> "AND NOT ({relationName} in r.config) AND r.project = {projectName}"
+        <> "SET r.config = coalesce(r.config,[]) + {relationName}"
+        <> "RETURN r") $ M.fromList [
+                (T.pack "from", TC.newparam $ from)
+                , (T.pack "to", TC.newparam $ to)
                 , (T.pack "relationName", TC.newparam $ relation)
+                , (T.pack "projectName", TC.newparam $ projectName)
                 ]
     pure ()
+
+
 
 project2map project =
     let pName = projName project
