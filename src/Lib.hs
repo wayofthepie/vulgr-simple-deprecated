@@ -19,12 +19,14 @@ import Network.Wai.Handler.Warp
 import Servant
 
 import Vulgr.Gradle
+import Vulgr.DependencySpec
 
 import Debug.Trace
 
 type API =
     "graph" :> ReqBody '[JSON] GradleDependencySpec
             :> Post '[JSON] T.Text
+    :<|> "hello" :> Get '[JSON] T.Text
 {-    :<|> "graph"
             :> Capture "appName" T.Text
             :> Capture "version" T.Text
@@ -41,19 +43,21 @@ api :: Proxy API
 api = Proxy
 
 server :: Server API
-server = graphDeps
+server = graphDeps :<|> hello
 
 getDepsFor :: T.Text -> T.Text -> GradleDependencySpec -> EitherT ServantErr IO T.Text
 getDepsFor appName version gdeps = do
-    eitherResult <- liftIO $ graphGradleDeps gdeps
+    eitherResult <- liftIO $ graphGradleDeps2 gdeps
     case eitherResult of
         Right _ -> pure ("Created dependency graph for " <> appName <> " " <> version)
         Left _  -> pure "Error...!"
 
 graphDeps :: GradleDependencySpec -> EitherT ServantErr IO T.Text
 graphDeps gdeps = do
-    eitherResult <- liftIO $ graphGradleDeps gdeps
+    eitherResult <- liftIO $ graphGradleDeps2 gdeps
     case eitherResult of
         Right _ -> pure ("Created dependency graph for ")
         Left err  -> pure $ (fst err) <> " : " <> (snd err)
 
+hello :: EitherT ServantErr IO T.Text
+hello = pure "hello!!"

@@ -190,4 +190,4 @@ n4jTransaction conn action = flip Neo.runNeo4j conn $
 
 -- Hardcode the connection details for now.
 -- FIXME : This should be picked up from external configuration.
-hardConn = (Neo.newAuthConnection (TE.encodeUtf8 "172.17.0.3") 7474 (TE.encodeUtf8 "neo4j", TE.encodeUtf8 "test"))
+hardConn = (Neo.newAuthConnection (TE.encodeUtf8 "172.17.0.2") 7474 (TE.encodeUtf8 "neo4j", TE.encodeUtf8 "test"))
