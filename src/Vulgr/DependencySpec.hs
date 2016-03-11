@@ -7,6 +7,7 @@ module Vulgr.DependencySpec where
 
 import Control.Parallel.Strategies
 import Control.Monad
+import Control.Monad.State
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
@@ -21,6 +22,11 @@ import qualified Database.Neo4j.Types as Neo
 import qualified Database.Neo4j.Transactional.Cypher as TC
 import Vulgr.Gradle
 
+import Data.Graph.Inductive.Graph
+import Data.Graph.Inductive.PatriciaTree
+
+
+
 import Debug.Trace
 
 
@@ -30,105 +36,64 @@ data Neo4jConfig = Neo4jConfig
     { conn :: Neo.Connection
     }
 
-data Node = Node
+data NodeData = NodeData
     { name    :: T.Text
-    , version :: T.Text
+    , version :: Maybe T.Text
+    , labels  :: [T.Text]
     } deriving (Eq, Show)
 
-data RelationMetaData = RelationMetaData
+data RelationData = RelationData
     { config   :: T.Text
-    , rootNode :: Node
+    , rootNode :: NodeData
     } deriving (Eq, Show)
 
-graphGradleDeps2 :: GradleDependencySpec -> IO (Either TC.TransError ())
-graphGradleDeps2 gdeps =
-    let node = Node (gDepName gdeps) (mVerToText $ gDepVersion gdeps)
-        configs = gDepConfigs gdeps
-        --ts = map (configToGraph node) configs `using` parList rseq
-    in hardConn >>= \conn -> do
-        let action = createNode node >> mapM_ (configToGraph node) configs
-        et <- n4jTransaction conn action
-        case et of
-            Right _ -> pure et
-            Left (t1,t2) -> retryOnDeadlock action conn
+class Graphable s where
+    graph :: s -> Gr NodeData RelationData
+
+type DependencyGraph = Gr NodeData RelationData
+type GraphState = (Int, DependencyGraph)
+--type GraphState = State (Int, DependencyGraph) DependencyGraph
+
+
+instance Graphable GradleDependencySpec where
+    graph gradleDeps =
+       let rootNode  = NodeData (gDepName gradleDeps) (gDepVersion gradleDeps) []
+           initGraph = insNode (0,rootNode) empty
+       in  snd $ foldr (\config grs -> parseConfig grs config) (0,initGraph) $ gDepConfigs gradleDeps
+
+
+parseConfig :: GraphState -> Configuration -> GraphState
+parseConfig grs (Configuration _ _ Nothing)   = grs
+parseConfig grs (Configuration _ _ (Just [])) = grs
+parseConfig grs (Configuration configName _ (Just deps)) = do
+    parseDependencies grs 0 deps configName
+
+
+parseDependencies :: GraphState -> Int -> [Dependency] -> T.Text -> GraphState
+parseDependencies grs  _ [] _ = grs
+parseDependencies grs parentIx (dep:deps) configName =
+    let currIx    = fst grs
+        currGraph = snd grs
+        thisIx    = currIx + 1
+        thisNode  = NodeData (depName dep) Nothing []
+        g = consEdge parentIx thisIx configName $ consNode thisIx thisNode currGraph
+    in case depChildren dep of
+        Just children ->  case children of
+                            [] -> parseDependencies (thisIx, g) thisIx deps configName
+                            _  -> parseDependencies (thisIx, g) thisIx children configName
+        Nothing ->  parseDependencies (thisIx, g) parentIx deps configName
   where
-    configToGraph :: Node -> Configuration -> TC.Transaction ()
-    configToGraph rootNode config =
-        -- FIXME : Need to sanitize relation names correctly!
-        let relationMetaData = RelationMetaData (T.replace "-" "" $ confName config) rootNode
-        in case confDeps config of
-            Nothing -> pure ()
-            Just deps -> mapM_ (depToGraph rootNode relationMetaData) deps
+    getRootNode :: DependencyGraph -> NodeData
+    getRootNode currGraph =
+        case lab currGraph 0 of
+            Just n -> n
+            -- This is impossible because the root node, 0, always exists.
+            Nothing -> NodeData "Impossible" Nothing []
 
-    depToGraph :: Node -> RelationMetaData -> Dependency -> TC.Transaction ()
-    depToGraph rootNode relationMetaData dep = do
-        let thisNode = Node (depName dep) "test-version"
+    consEdge :: Int -> Int -> T.Text -> DependencyGraph -> DependencyGraph
+    consEdge from to configName g =
+        insEdge (from, to, RelationData configName (getRootNode g)) g
 
-        createNode thisNode
+    consNode :: Int -> NodeData -> DependencyGraph -> DependencyGraph
+    consNode ix ndat = insNode (ix, ndat)
 
-        -- Relate this node to its direct reverse dependency.
-        createAndRelateNeighbour rootNode relationMetaData thisNode
-
-        -- Relate this node to its child dependencies, if they exist.
-        case depChildren dep of
-            Nothing -> pure ()
-            Just children -> mapM_ (depToGraph thisNode relationMetaData) children
-
-    mVerToText :: Maybe T.Text -> T.Text
-    mVerToText maybeText = case maybeText of
-                             Just txt -> txt
-                             Nothing -> "undefined"
-
-    retryOnDeadlock action conn =
-        retrying
-            (constantDelay 50000 <> limitRetries 5)
-            (\rs b -> case b of
-                    -- FIXME : Test for deadlock, we dont want to retry on all errors.
-                    Left (errorName,_) -> pure True
-                    Right _ -> pure False)
-            (\rs -> n4jTransaction conn action)
-
-
-createNode :: Node ->  TC.Transaction ()
-createNode node =do
-    TC.cypher ("MERGE ( n:PROJECT { name : {name}, version : {version}} )") $
-        nodeToMap node
-    pure ()
-
-createAndRelateNeighbour :: Node -> RelationMetaData -> Node -> TC.Transaction TC.Result
-createAndRelateNeighbour root relationMetaData neighbour = --traceShow ("C " ++ T.unpack (name root) ++ " " ++ T.unpack (name neighbour) )$
-    createNode neighbour >> relateNodes root relationMetaData neighbour
-
--- | Relate two nodes.
--- FIXME : Currently assumes a from -> to relationship.
-relateNodes :: Node -> RelationMetaData -> Node -> TC.Transaction TC.Result
-relateNodes from relationMetaData to = findAndBuildRelation from relationMetaData to
-  where
-    -- Create the relationship between the two nodes. Merge here ensures
-    -- we don't overwrite an existing relationship.
-    findAndBuildRelation :: Node -> RelationMetaData -> Node -> TC.Transaction TC.Result
-    findAndBuildRelation from relationMetaData to = do
-        let root = rootNode relationMetaData
-        let rootName = name root
-        let rootVersion = version root
-        let configName = config relationMetaData
-        TC.cypher ("MATCH (a:PROJECT),(b:PROJECT)"
-            <> "WHERE a.name = {fromName} and a.version = {fromVersion}"
-            <> "AND b.name = {toName} and b.version = {toVersion}"
-            <> "MERGE (a)-[r:" <> configName  <> "]->(b)"
-            <> "ON CREATE SET r.rootName = {rootName}, r.rootVersion = {rootVersion}"
-            <> "RETURN r") $ M.fromList [
-                    (T.pack "fromName",     TC.newparam (name from))
-                    , (T.pack "fromVersion",TC.newparam (version from))
-                    , (T.pack "toName",     TC.newparam (name to))
-                    , (T.pack "toVersion",  TC.newparam (version to))
-                    , (T.pack "rootName",  TC.newparam rootName)
-                    , (T.pack "rootVersion",  TC.newparam rootVersion)
-                    ]
-
-nodeToMap :: Node -> M.HashMap T.Text TC.ParamValue
-nodeToMap (Node name version) =
-    M.fromList [
-        (T.pack "name", TC.newparam name)
-        , (T.pack "version", TC.newparam version)
-        ]

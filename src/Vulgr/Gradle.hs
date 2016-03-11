@@ -52,6 +52,7 @@ data Dependency = Dependency
     , depChildren        :: Maybe [Dependency]
     } deriving (Eq, Show)
 
+
 instance FromJSON Dependency where
     parseJSON (Object o) = Dependency
         <$> o .: "module"
@@ -60,6 +61,9 @@ instance FromJSON Dependency where
         <*> o .:? "hasConfict"
         <*> o .: "alreadyRendered"
         <*> o .: "children"
+
+
+
 
 data Project = Project
     { projName :: T.Text

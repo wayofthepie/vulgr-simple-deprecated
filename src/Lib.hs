@@ -47,14 +47,14 @@ server = graphDeps :<|> hello
 
 getDepsFor :: T.Text -> T.Text -> GradleDependencySpec -> EitherT ServantErr IO T.Text
 getDepsFor appName version gdeps = do
-    eitherResult <- liftIO $ graphGradleDeps2 gdeps
+    eitherResult <- liftIO $ graphGradleDeps gdeps
     case eitherResult of
         Right _ -> pure ("Created dependency graph for " <> appName <> " " <> version)
         Left _  -> pure "Error...!"
 
 graphDeps :: GradleDependencySpec -> EitherT ServantErr IO T.Text
 graphDeps gdeps = do
-    eitherResult <- liftIO $ graphGradleDeps2 gdeps
+    eitherResult <- liftIO $ graphGradleDeps gdeps
     case eitherResult of
         Right _ -> pure ("Created dependency graph for ")
         Left err  -> pure $ (fst err) <> " : " <> (snd err)
