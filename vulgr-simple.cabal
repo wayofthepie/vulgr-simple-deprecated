@@ -26,6 +26,7 @@ library
     , containers
     , either
     , fgl
+    , hashable
     , haskell-neo4j-client
     , json-stream
     , mtl
