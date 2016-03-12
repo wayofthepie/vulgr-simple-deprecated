@@ -49,7 +49,7 @@ graphDeps :: GradleDependencySpec -> EitherT ServantErr IO T.Text
 graphDeps gdeps = do
     eitherResult <-  liftIO (pure . Right . pretty $ graph gdeps)
     case eitherResult of
-        Right r -> pure r
+        Right r -> traceShow ("req") $ pure r
         Left err  -> pure $ (fst err) <> " : " <> (snd err)
 
 hello :: EitherT ServantErr IO T.Text

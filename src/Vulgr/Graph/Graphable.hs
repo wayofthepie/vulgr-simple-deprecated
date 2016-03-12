@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -9,6 +10,7 @@ module Vulgr.Graph.Graphable (
     , Graphable
     , GNodeData
     , GRelationData
+    , GraphType
     , graph
     , emptyUNGraph
     , consEdge
@@ -51,15 +53,17 @@ type NodeConstraints n = (Eq n, Hashable n, Show n)
 -- To infer the types of the nodes and relationships we need to tell the compiler
 -- that 'n' is equivalent 'GNodeData s' and 'r' is equivalent to 'GRelationData s'.
 --
-class (n ~ GNodeData s, r ~ GRelationData s, NodeConstraints n) => Graphable s n r where
+class Graphable s where
     type GNodeData s     :: *
     type GRelationData s :: *
-    graph :: s -> UniqueNodeGraph (GNodeData s) (GRelationData s)
-
+    type GraphType s     :: *
+    graph :: NodeConstraints (GNodeData s)
+          => s
+          -> (GraphType s) --UniqueNodeGraph (GNodeData s) (GRelationData s)
 
 -- | Construct an empty unique node graph.
 --
-emptyUNGraph :: NodeConstraints n => UniqueNodeGraph n r
+emptyUNGraph :: NodeConstraints n  => UniqueNodeGraph n r
 emptyUNGraph = UniqueNodeGraph H.empty empty
 
 
@@ -81,11 +85,11 @@ consNode ndata (UniqueNodeGraph m g) = create ndata $ H.lookup ndata m
     create ndata (Just nid) = (nid, UniqueNodeGraph m (insNode (nid, ndata) g))
     create ndata Nothing =
         let [newNid] = newNodes 1 g
-            m'       = traceShow (show newNid) $ H.insert ndata newNid m
+            m'       = H.insert ndata newNid m
         in  (newNid, UniqueNodeGraph m' (insNode (newNid, ndata) g))
 
 
 -- | Convenience method to pretty print the graph.
 --
-pretty ::(Show r, NodeConstraints n) => UniqueNodeGraph n r -> T.Text
+pretty :: (Show r, NodeConstraints n) => UniqueNodeGraph n r -> T.Text
 pretty g = T.pack . prettify $ getGraph g

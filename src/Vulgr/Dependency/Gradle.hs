@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -6,6 +7,7 @@ module Vulgr.Dependency.Gradle (
     , graph
     ) where
 
+import Control.Parallel.Strategies
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
 import Data.Hashable (Hashable, hash, hashWithSalt)
@@ -17,6 +19,7 @@ import qualified Database.Neo4j as Neo
 import qualified Database.Neo4j.Transactional.Cypher as TC
 
 import Vulgr.Graph.Graphable
+import Vulgr.Graph.Persist
 
 
 data GradleDependencySpec = GradleDependencySpec
@@ -85,9 +88,10 @@ data RelationData = RelationData
     } deriving (Eq, Show)
 
 
-instance Graphable GradleDependencySpec NodeData RelationData where
+instance Graphable GradleDependencySpec where
     type GNodeData GradleDependencySpec = NodeData
     type GRelationData GradleDependencySpec = RelationData
+    type GraphType GradleDependencySpec = (UniqueNodeGraph NodeData RelationData)
     graph gradleDeps =
        let rootNode  = NodeData (gDepName gradleDeps) (gDepVersion gradleDeps) []
            (_, initGraph) = consNode rootNode emptyUNGraph
@@ -122,3 +126,4 @@ parseDependencies g root parentNodeId (dep:deps) configName =
                             _  -> parseDependencies g'' root thisNodeId children configName
         Nothing ->  parseDependencies g'' root parentNodeId deps configName
 
+parFold f init = (foldr f init) . withStrategy (parList rseq)
