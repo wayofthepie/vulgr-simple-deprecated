@@ -18,6 +18,7 @@ import Data.Hashable
 import qualified Data.HashMap.Strict as H
 import Data.Monoid
 import qualified Data.Text as T
+import Data.Maybe (maybe)
 --import qualified Database.Neo4j as Neo
 import qualified Database.Neo4j.Types as Neo
 import qualified Database.Neo4j.Transactional.Cypher as TC
@@ -26,7 +27,7 @@ import Vulgr.Gradle
 import Data.Graph.Inductive.Graph
 import Data.Graph.Inductive.PatriciaTree
 
-
+import Vulgr.Graph.Graphable
 
 import Debug.Trace
 
@@ -51,60 +52,44 @@ data RelationData = RelationData
     , rootNode :: NodeData
     } deriving (Eq, Show)
 
-class Graphable s where
-    graph :: s -> Gr NodeData RelationData
 
 type DependencyGraph = Gr NodeData RelationData
-type GraphState = (H.HashMap NodeData Int, DependencyGraph)
---type GraphState = State (Int, DependencyGraph) DependencyGraph
 
+--instance NodeConstraints NodeData
 
-instance Graphable GradleDependencySpec where
+instance Graphable GradleDependencySpec NodeData RelationData where
+    type GNodeData GradleDependencySpec = NodeData
+    type GRelationData GradleDependencySpec = RelationData
     graph gradleDeps =
        let rootNode  = NodeData (gDepName gradleDeps) (gDepVersion gradleDeps) []
-           initGraphState = (H.empty, insNode (0,rootNode) empty)
-       in  snd $ foldr (\config grs -> parseConfig grs config) initGraphState $ gDepConfigs gradleDeps
+           (_, initGraph) = consNode rootNode emptyUNGraph
+           configs = gDepConfigs gradleDeps
+       in  foldr (\config g -> parseConfig g rootNode config) initGraph configs
+
+parseConfig :: UniqueNodeGraph NodeData RelationData
+            -> NodeData
+            -> Configuration
+            -> UniqueNodeGraph NodeData RelationData
+parseConfig g _ (Configuration _ _ Nothing)   = g
+parseConfig g _ (Configuration _ _ (Just [])) = g
+parseConfig g root (Configuration configName _ (Just deps)) = do
+    parseDependencies g root 0 deps configName
 
 
-parseConfig :: GraphState -> Configuration -> GraphState
-parseConfig grs (Configuration _ _ Nothing)   = grs
-parseConfig grs (Configuration _ _ (Just [])) = grs
-parseConfig grs (Configuration configName _ (Just deps)) = do
-    parseDependencies grs 0 deps configName
-
-
-parseDependencies :: GraphState -> Int -> [Dependency] -> T.Text -> GraphState
-parseDependencies grs  _ [] _ = grs
-parseDependencies grs parentNodeId (dep:deps) configName =
+parseDependencies :: UniqueNodeGraph NodeData RelationData
+                  -> NodeData
+                  -> Int
+                  -> [Dependency]
+                  -> T.Text
+                  -> UniqueNodeGraph NodeData RelationData
+parseDependencies g _  _ [] _ = g
+parseDependencies g root parentNodeId (dep:deps) configName =
     let thisNode  = NodeData (depName dep) Nothing []
-        (thisNodeId, (m, g)) = consNode thisNode grs
-        g' = consEdge parentNodeId thisNodeId configName g
+        (thisNodeId, g') = consNode thisNode g
+        g'' = consEdge parentNodeId thisNodeId (RelationData configName root) g'
     in case depChildren dep of
         Just children ->  case children of
-                            [] -> parseDependencies (m, g') thisNodeId deps configName
-                            _  -> parseDependencies (m, g') thisNodeId children configName
-        Nothing ->  parseDependencies (m, g') parentNodeId deps configName
-  where
-    getRootNode :: DependencyGraph -> NodeData
-    getRootNode currGraph =
-        case lab currGraph 0 of
-            Just n -> n
-            -- This is impossible because the root node, 0, always exists.
-            Nothing -> NodeData "Impossible" Nothing []
-
-    consEdge :: Int -> Int -> T.Text -> DependencyGraph -> DependencyGraph
-    consEdge from to configName g =
-        insEdge (from, to, RelationData configName (getRootNode g)) g
-
-    -- | Construct a new node in the given dependency graph.
-    consNode :: NodeData -> GraphState -> (Int, GraphState)
-    consNode ndata (m, g) = create $ H.lookup ndata m
-      where
-        -- | Create a node in the graph if it does not already exist.
-        create :: Maybe Int -> (Int, GraphState)
-        create (Just nid) = (nid, (m, insNode (nid, ndata) g))
-        create Nothing    = traceShow ("New node being created for " <> show ndata) $
-            let [newNid] = newNodes 1 g
-                m'       = H.insert ndata newNid m
-            in  (newNid, (m', insNode (newNid, ndata) g))
+                            [] -> parseDependencies g'' root thisNodeId deps configName
+                            _  -> parseDependencies g'' root thisNodeId children configName
+        Nothing ->  parseDependencies g'' root parentNodeId deps configName
 
