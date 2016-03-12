@@ -1,43 +1,73 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-module Vulgr.DependencySpec where
+module Vulgr.Dependency.Gradle (
+    GradleDependencySpec
+    , graph
+    ) where
 
-import Control.Parallel.Strategies
-import Control.Monad
-import Control.Monad.State
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Class
-import Control.Monad.Trans.Reader
-import Control.Monad.Trans.Resource (runResourceT, ResourceT)
-import Control.Retry
-import Data.Functor
-import Data.Hashable
-import qualified Data.HashMap.Strict as H
+import Control.Monad.IO.Class (liftIO)
+import Data.Aeson
+import Data.Hashable (Hashable, hash, hashWithSalt)
+import qualified Data.HashMap.Strict as M
 import Data.Monoid
 import qualified Data.Text as T
-import Data.Maybe (maybe)
---import qualified Database.Neo4j as Neo
-import qualified Database.Neo4j.Types as Neo
+import qualified Data.Text.Encoding as TE
+import qualified Database.Neo4j as Neo
 import qualified Database.Neo4j.Transactional.Cypher as TC
-import Vulgr.Gradle
-
-import Data.Graph.Inductive.Graph
-import Data.Graph.Inductive.PatriciaTree
 
 import Vulgr.Graph.Graphable
 
-import Debug.Trace
+
+data GradleDependencySpec = GradleDependencySpec
+    { gDepName     :: T.Text
+    , gDepDesc     :: Maybe T.Text
+    , gDepConfigs  :: [Configuration]
+    , gDepVersion  :: Maybe T.Text -- FIXME: SemVer?
+    } deriving (Eq, Show)
+
+instance FromJSON GradleDependencySpec where
+    parseJSON (Object o) = GradleDependencySpec
+        <$> o .: "name"
+        <*> o .:? "description"
+        <*> o .: "configurations"
+        <*> o .:? "version"
 
 
-type Neo4jT a = ReaderT Neo4jConfig (ResourceT IO) a
+data Configuration = Configuration
+    { confName :: T.Text
+    , confDesc :: Maybe T.Text
+    , confDeps :: Maybe [Dependency]
+--    , confModuleInsights :: Maybe [ModuleInsights] ignore for now
+    } deriving (Eq, Show)
 
-data Neo4jConfig = Neo4jConfig
-    { conn :: Neo.Connection
-    }
+instance FromJSON Configuration where
+    parseJSON (Object o) = Configuration
+        <$> o .: "name"
+        <*> o .:? "description"
+        <*> o .:? "dependencies"
 
+data Dependency = Dependency
+    { depModule          :: Maybe T.Text
+    , depName            :: T.Text
+    , depResolvable      :: Bool
+    , depHasConflict     :: Maybe Bool
+    , depAlreadyRendered :: Bool
+    , depChildren        :: Maybe [Dependency]
+    } deriving (Eq, Show)
+
+
+instance FromJSON Dependency where
+    parseJSON (Object o) = Dependency
+        <$> o .: "module"
+        <*> o .: "name"
+        <*> o .: "resolvable"
+        <*> o .:? "hasConfict"
+        <*> o .: "alreadyRendered"
+        <*> o .: "children"
+
+
+-- | The data to be stored in nodes
 data NodeData = NodeData
     { name    :: T.Text
     , version :: Maybe T.Text
@@ -47,15 +77,13 @@ data NodeData = NodeData
 instance Hashable NodeData where
     hashWithSalt s (NodeData n v ls) = s + hash n + hash v + hash ls
 
+
+-- | The data to be stored in relationships.
 data RelationData = RelationData
     { config   :: T.Text
     , rootNode :: NodeData
     } deriving (Eq, Show)
 
-
-type DependencyGraph = Gr NodeData RelationData
-
---instance NodeConstraints NodeData
 
 instance Graphable GradleDependencySpec NodeData RelationData where
     type GNodeData GradleDependencySpec = NodeData
@@ -65,6 +93,7 @@ instance Graphable GradleDependencySpec NodeData RelationData where
            (_, initGraph) = consNode rootNode emptyUNGraph
            configs = gDepConfigs gradleDeps
        in  foldr (\config g -> parseConfig g rootNode config) initGraph configs
+
 
 parseConfig :: UniqueNodeGraph NodeData RelationData
             -> NodeData

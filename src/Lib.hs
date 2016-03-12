@@ -18,8 +18,8 @@ import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
 
-import Vulgr.Gradle
-import Vulgr.DependencySpec
+import Vulgr.Graph.Graphable (getGraph, pretty)
+import Vulgr.Dependency.Gradle
 
 import Debug.Trace
 
@@ -45,18 +45,11 @@ api = Proxy
 server :: Server API
 server = graphDeps :<|> hello
 
-getDepsFor :: T.Text -> T.Text -> GradleDependencySpec -> EitherT ServantErr IO T.Text
-getDepsFor appName version gdeps = do
-    eitherResult <- liftIO $ graphGradleDeps gdeps
-    case eitherResult of
-        Right _ -> pure ("Created dependency graph for " <> appName <> " " <> version)
-        Left _  -> pure "Error...!"
-
 graphDeps :: GradleDependencySpec -> EitherT ServantErr IO T.Text
 graphDeps gdeps = do
-    eitherResult <- liftIO $ graphGradleDeps gdeps
+    eitherResult <-  liftIO (pure . Right . pretty $ graph gdeps)
     case eitherResult of
-        Right _ -> pure ("Created dependency graph for ")
+        Right r -> pure r
         Left err  -> pure $ (fst err) <> " : " <> (snd err)
 
 hello :: EitherT ServantErr IO T.Text

@@ -2,7 +2,19 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
-module Vulgr.Graph.Graphable where
+module Vulgr.Graph.Graphable (
+    UniqueNodeGraph
+    , getGraph
+
+    , Graphable
+    , GNodeData
+    , GRelationData
+    , graph
+    , emptyUNGraph
+    , consEdge
+    , consNode
+    , pretty
+    ) where
 
 import Data.Functor
 import Data.Graph.Inductive.Graph
@@ -25,10 +37,12 @@ data UniqueNodeGraph n r = UniqueNodeGraph
     , unGraph :: Gr n r
     } deriving (Eq, Show)
 
+getGraph :: UniqueNodeGraph n r -> Gr n r
+getGraph = unGraph
 
 -- | The constraints a node must have to be graphable.
 --
-type NodeConstraints n = ( Eq n, Hashable n, Show n)
+type NodeConstraints n = (Eq n, Hashable n, Show n)
 
 
 -- | A UniqueNodeGraphable specification data type s where 'n' is the type of its node data and
@@ -70,3 +84,8 @@ consNode ndata (UniqueNodeGraph m g) = create ndata $ H.lookup ndata m
             m'       = traceShow (show newNid) $ H.insert ndata newNid m
         in  (newNid, UniqueNodeGraph m' (insNode (newNid, ndata) g))
 
+
+-- | Convenience method to pretty print the graph.
+--
+pretty ::(Show r, NodeConstraints n) => UniqueNodeGraph n r -> T.Text
+pretty g = T.pack . prettify $ getGraph g
