@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 module Vulgr.Dependency.Npm where
@@ -47,30 +49,8 @@ instance FromJSON DependencyInfo where
     --    <*> o .:? "optionalDependencies"
     parseJSON o = fail "Expecting an Object of type DependencyInfo!"
 
-
--- | FIXME :Exactly the same as gradle NodeData...
-data NodeData = NodeData
-    { nodeName :: T.Text
-    , nodeVersion :: Maybe T.Text
-    , nodeLabels :: [T.Text]
-    } deriving (Eq, Show)
-
-instance Hashable NodeData where
-    hashWithSalt s (NodeData n v ls) = s + hash n + hash v + hash ls
-
-
-data RelationData = RelationData
-    { rootNode :: NodeData
-    , depType :: T.Text -- devDependency, dependency
-    } deriving (Eq, Show)
-
-
 instance Graphable LongNpmDependencySpec where
-   type GNodeData LongNpmDependencySpec = NodeData
-   type GRelationData LongNpmDependencySpec = RelationData
-   type GResult LongNpmDependencySpec = UniqueNodeGraph NodeData RelationData
-   graph = graph'
-
+    graph = graph'
 
 graph' :: LongNpmDependencySpec -> UniqueNodeGraph NodeData RelationData
 graph' longNpmSpec =
@@ -81,7 +61,7 @@ graph' longNpmSpec =
         root $ initGraph root
   where
     initGraph n = snd $ consNode n emptyGraph
-    root = NodeData (name longNpmSpec) (version longNpmSpec) []
+    root = NodeData [("name", Just $ name longNpmSpec), ("version", version longNpmSpec)] []
 
 parseDirect :: Maybe Dependencies
             -> Maybe DevDependencies
@@ -115,8 +95,8 @@ parseDevDeps maybeDevDeps (parentId, parentNode) root g =
                   -> UniqueNodeGraph NodeData RelationData
                   -> UniqueNodeGraph NodeData RelationData
     createAndLink pid (k,v) g =
-        let thisNode         = NodeData k (Just v) []
-            relationData     = RelationData root "devDependency"
+        let thisNode         = NodeData [("name", Just k), ("version", Just v)] []
+            relationData     = RelationData [("root", Just "ddd"), ("type", Just "devDependency")] []
             (thisNodeId, g') = consNode thisNode g
             g''              = consEdge pid thisNodeId relationData g
         in  g''
@@ -140,9 +120,9 @@ parseDependency :: T.Text
                 -> UniqueNodeGraph NodeData RelationData
                 -> UniqueNodeGraph NodeData RelationData
 parseDependency depName depInfo parentNodeId root depType g =
-    let thisNode = NodeData depName (diVersion depInfo) []
+    let thisNode = NodeData [("name", Just depName), ("version", diVersion depInfo)] []
         (thisNodeId,g') = consNode thisNode g
-        g'' = consEdge parentNodeId thisNodeId (RelationData root depType) g'
+        g'' = consEdge parentNodeId thisNodeId (RelationData [("root", Just "fff"), ("type", Just depType)] []) g'
     in parseDirect (diDependencies depInfo) (diDevDependencies depInfo) (thisNodeId, thisNode) root g''
 
 

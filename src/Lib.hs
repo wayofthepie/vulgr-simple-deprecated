@@ -23,6 +23,7 @@ import Vulgr.Configuration (Configuration(..))
 import Vulgr.Dependency.Gradle
 import Vulgr.Dependency.Npm
 import Vulgr.Graph.Graphable (pretty)
+import Vulgr.Graph.Persist (persist)
 
 import Debug.Trace
 
@@ -62,10 +63,14 @@ runAppT conn action = liftIO (runReaderT (runApp action) conn)
 
 graphDeps :: LongNpmDependencySpec -> App T.Text
 graphDeps gdeps = do
-    eitherResult <-  liftIO (pure . Right . pretty $ graph gdeps)
+    let g = graph gdeps
+    conn <- ask
+    pg <- liftIO $ persist g conn
+    pure $ mconcat pg
+{-    eitherResule <-  liftIO (pure . Right . pretty $ g)
     case eitherResult of
         Right r -> pure r
-        Left err-> pure $ (fst err) <> " : " <> (snd err)
+        Left err-> pure $ (fst err) <> " : " <> (snd err) -}
 
 hello :: App T.Text
 hello = pure "hello!!"

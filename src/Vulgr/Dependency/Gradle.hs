@@ -65,32 +65,12 @@ instance FromJSON Dependency where
         <*> o .:? "hasConfict"
         <*> o .: "alreadyRendered"
         <*> o .: "children"
-    parseJSON _ = fail "Expecting an object of type Dependency!"
 
--- | The data to be stored in nodes
-data NodeData = NodeData
-    { name    :: T.Text
-    , version :: Maybe T.Text
-    , labels  :: [T.Text]
-    } deriving (Eq, Show)
-
-instance Hashable NodeData where
-    hashWithSalt s (NodeData n v ls) = s + hash n + hash v + hash ls
-
-
--- | The data to be stored in relationships.
-data RelationData = RelationData
-    { config   :: T.Text
-    , rootNode :: NodeData
-    } deriving (Eq, Show)
 
 
 instance Graphable GradleDependencySpec where
-    type GNodeData GradleDependencySpec = NodeData
-    type GRelationData GradleDependencySpec = RelationData
-    type GResult GradleDependencySpec = UniqueNodeGraph NodeData RelationData
     graph gradleDeps =
-       let rootNode  = NodeData (gDepName gradleDeps) (gDepVersion gradleDeps) []
+       let rootNode  = NodeData [("project", Just $ gDepName gradleDeps), ("version", gDepVersion gradleDeps)] []
            (_, initGraph) = consNode rootNode emptyGraph
            configs = gDepConfigs gradleDeps
        in  foldr (\config g -> parseConfig g rootNode config) initGraph configs
@@ -114,9 +94,9 @@ parseDependencies :: UniqueNodeGraph NodeData RelationData
                   -> UniqueNodeGraph NodeData RelationData
 parseDependencies g _  _ [] _ = g
 parseDependencies g root parentNodeId (dep:deps) configName =
-    let thisNode  = NodeData (depName dep) Nothing []
+    let thisNode  = NodeData [("project", Just $ depName dep)] []
         (thisNodeId, g') = consNode thisNode g
-        g'' = consEdge parentNodeId thisNodeId (RelationData configName root) g'
+        g'' = consEdge parentNodeId thisNodeId (RelationData [("config", Just configName), ("root", Just "fff")] []) g'
     in case depChildren dep of
         Just children ->  case children of
                             [] -> parseDependencies g'' root thisNodeId deps configName
