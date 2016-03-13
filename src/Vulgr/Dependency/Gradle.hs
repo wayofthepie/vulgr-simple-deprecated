@@ -15,8 +15,6 @@ import qualified Data.HashMap.Strict as M
 import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
-import qualified Database.Neo4j as Neo
-import qualified Database.Neo4j.Transactional.Cypher as TC
 
 import Vulgr.Graph.Graphable
 
@@ -67,7 +65,7 @@ instance FromJSON Dependency where
         <*> o .:? "hasConfict"
         <*> o .: "alreadyRendered"
         <*> o .: "children"
-
+    parseJSON _ = fail "Expecting an object of type Dependency!"
 
 -- | The data to be stored in nodes
 data NodeData = NodeData

@@ -10,3 +10,5 @@ import Vulgr.Graph.Graphable
 persist :: VulgrGraph g => g -> Either TC.TransError ()
 persist g = do
     gr <- extract g
+
+

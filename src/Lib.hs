@@ -21,12 +21,13 @@ import Servant
 
 import Vulgr.Configuration (Configuration(..))
 import Vulgr.Dependency.Gradle
+import Vulgr.Dependency.Npm
 import Vulgr.Graph.Graphable (pretty)
 
 import Debug.Trace
 
 type API =
-    "graph" :> ReqBody '[JSON] GradleDependencySpec
+    "graph" :> ReqBody '[JSON] LongNpmDependencySpec
             :> Post '[JSON] T.Text
     :<|> "hello" :> Get '[JSON] T.Text
 
@@ -59,11 +60,11 @@ runAppT :: Neo.Connection -> App a -> EitherT ServantErr IO a
 runAppT conn action = liftIO (runReaderT (runApp action) conn)
 
 
-graphDeps :: GradleDependencySpec -> App T.Text
+graphDeps :: LongNpmDependencySpec -> App T.Text
 graphDeps gdeps = do
     eitherResult <-  liftIO (pure . Right . pretty $ graph gdeps)
     case eitherResult of
-        Right r -> traceShow ("req") $ pure r
+        Right r -> pure r
         Left err-> pure $ (fst err) <> " : " <> (snd err)
 
 hello :: App T.Text
