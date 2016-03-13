@@ -1,9 +1,10 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
-module Vulgr.Graph.Graphable (
+module Vulgr.Graph.Graphable {-(
     UniqueNodeGraph
     , getGraph
 
@@ -16,7 +17,7 @@ module Vulgr.Graph.Graphable (
     , consEdge
     , consNode
     , pretty
-    ) where
+    )-} where
 
 import Data.Functor
 import Data.Graph.Inductive.Graph
@@ -27,9 +28,37 @@ import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Debug.Trace
 
--- | A graph with unique nodes.
+-- | The constraints a node must have to be graphable.
 --
--- These are currently the only types of graphs vulgr cares about.
+type NodeConstraints n = (Eq n, Hashable n, Show n)
+
+
+-- | A Graphable specification data type s where 'n' is the type of its node data and
+-- 'r' is the type of its relationship data.
+--
+-- To infer the types of the nodes and relationships we need to tell the compiler
+-- that 'n' is equivalent 'GNodeData s' and 'r' is equivalent to 'GRelationData s'.
+--
+class Graphable s where
+    type GNodeData s     :: *
+    type GRelationData s :: * -- not needed yet
+    type GResult s       :: *
+    graph :: (VulgrGraph (GResult s), NodeConstraints (GNodeData s))
+          => s
+          -> (GResult s)
+
+
+class (t ~ VGraph t) => VulgrGraph  t where
+    type VNodeData t :: *
+    type VRelationData t :: *
+    type VGraph t :: *
+    emptyGraph :: t
+    consEdge   :: Int -> Int -> VRelationData t -> t -> t
+    consNode   :: NodeConstraints (VNodeData t) =>VNodeData t -> t -> (Int, t)
+    extract    :: t -> Gr (VNodeData t) (VRelationData t)
+
+
+-- | A graph with unique nodes.
 --
 -- The type of node data is 'n' and the type of relationship data
 -- is 'r'. A hashmap is used to track the uniqueness of nodes.
@@ -39,57 +68,39 @@ data UniqueNodeGraph n r = UniqueNodeGraph
     , unGraph :: Gr n r
     } deriving (Eq, Show)
 
-getGraph :: UniqueNodeGraph n r -> Gr n r
-getGraph = unGraph
-
--- | The constraints a node must have to be graphable.
---
-type NodeConstraints n = (Eq n, Hashable n, Show n)
-
-
--- | A UniqueNodeGraphable specification data type s where 'n' is the type of its node data and
--- 'r' is the type of its relationship data.
---
--- To infer the types of the nodes and relationships we need to tell the compiler
--- that 'n' is equivalent 'GNodeData s' and 'r' is equivalent to 'GRelationData s'.
---
-class Graphable s where
-    type GNodeData s     :: *
-    type GRelationData s :: *
-    type GraphType s     :: *
-    graph :: NodeConstraints (GNodeData s)
-          => s
-          -> (GraphType s) --UniqueNodeGraph (GNodeData s) (GRelationData s)
-
--- | Construct an empty unique node graph.
---
-emptyUNGraph :: NodeConstraints n  => UniqueNodeGraph n r
-emptyUNGraph = UniqueNodeGraph H.empty empty
+instance VulgrGraph (UniqueNodeGraph n r) where
+    type VNodeData (UniqueNodeGraph n r) = n
+    type VRelationData (UniqueNodeGraph n r) = r
+    type VGraph (UniqueNodeGraph n r) = UniqueNodeGraph n r
+    extract = unGraph
 
 
--- | Construct and edge between the node at 'n1' and the node at 'n2'. The 'relationData'
--- tracks metadata about the relationship - labels, properties, direction etc...
---
-consEdge :: NodeConstraints n => Int -> Int -> r -> UniqueNodeGraph n r -> UniqueNodeGraph n r
-consEdge n1 n2 relationData (UniqueNodeGraph m g) =
-    UniqueNodeGraph m (insEdge (n1, n2, relationData) g)
+    -- | Construct an empty unique node graph.
+    --
+    emptyGraph = UniqueNodeGraph H.empty empty
 
 
--- | Construct a new node with data 'n' in the graph. Returns the graph and the int id
--- of the new node.
---
-consNode :: NodeConstraints n => n -> UniqueNodeGraph n r -> (Int, UniqueNodeGraph n r)
-consNode ndata (UniqueNodeGraph m g) = create ndata $ H.lookup ndata m
-  where
-    -- | Create a node in the graph if it does not already exist.
-    create ndata (Just nid) = (nid, UniqueNodeGraph m (insNode (nid, ndata) g))
-    create ndata Nothing =
-        let [newNid] = newNodes 1 g
-            m'       = H.insert ndata newNid m
-        in  (newNid, UniqueNodeGraph m' (insNode (newNid, ndata) g))
+    -- | Construct and edge between the node at 'n1' and the node at 'n2'. The 'relationData'
+    -- tracks metadata about the relationship - labels, properties, direction etc...
+    --
+    consEdge n1 n2 relationData (UniqueNodeGraph m g) =
+        UniqueNodeGraph m (insEdge (n1, n2, relationData) g)
+
+
+    -- | Construct a new node with data 'n' in the graph. Returns the graph and the int id
+    -- of the new node.
+    --
+    consNode ndata (UniqueNodeGraph m g) = create ndata $ H.lookup ndata m
+      where
+        -- | Create a node in the graph if it does not already exist.
+        create ndata (Just nid) = (nid, UniqueNodeGraph m (insNode (nid, ndata) g))
+        create ndata Nothing =
+            let [newNid] = newNodes 1 g
+                m'       = H.insert ndata newNid m
+            in  (newNid, UniqueNodeGraph m' (insNode (newNid, ndata) g))
 
 
 -- | Convenience method to pretty print the graph.
 --
 pretty :: (Show r, NodeConstraints n) => UniqueNodeGraph n r -> T.Text
-pretty g = T.pack . prettify $ getGraph g
+pretty g = T.pack . prettify $ extract g

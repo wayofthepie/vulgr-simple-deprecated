@@ -21,7 +21,7 @@ import Servant
 
 import Vulgr.Configuration (Configuration(..))
 import Vulgr.Dependency.Gradle
-import Vulgr.Graph.Graphable (getGraph, pretty)
+import Vulgr.Graph.Graphable (pretty)
 
 import Debug.Trace
 
