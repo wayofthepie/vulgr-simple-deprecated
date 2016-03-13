@@ -42,20 +42,20 @@ type NodeConstraints n = (Eq n, Hashable n, Show n)
 class Graphable s where
     type GNodeData s     :: *
     type GRelationData s :: * -- not needed yet
-    type GResult s       :: *
+    type GResult s :: *
     graph :: (VulgrGraph (GResult s), NodeConstraints (GNodeData s))
           => s
-          -> (GResult s)
+          -> GResult s
 
 
-class (t ~ VGraph t) => VulgrGraph  t where
-    type VNodeData t :: *
-    type VRelationData t :: *
-    type VGraph t :: *
-    emptyGraph :: t
-    consEdge   :: Int -> Int -> VRelationData t -> t -> t
-    consNode   :: NodeConstraints (VNodeData t) =>VNodeData t -> t -> (Int, t)
-    extract    :: t -> Gr (VNodeData t) (VRelationData t)
+-- | The class of graph types we care about in Vulgr.
+class VulgrGraph g where
+    type VNodeData g :: *
+    type VRelationData g :: *
+    emptyGraph :: g
+    consEdge   :: Int -> Int -> VRelationData g -> g -> g
+    consNode   :: NodeConstraints (VNodeData g) => VNodeData g -> g -> (Int, g)
+    extract    :: g -> Gr (VNodeData g) (VRelationData g)
 
 
 -- | A graph with unique nodes.
@@ -71,8 +71,6 @@ data UniqueNodeGraph n r = UniqueNodeGraph
 instance VulgrGraph (UniqueNodeGraph n r) where
     type VNodeData (UniqueNodeGraph n r) = n
     type VRelationData (UniqueNodeGraph n r) = r
-    type VGraph (UniqueNodeGraph n r) = UniqueNodeGraph n r
-    extract = unGraph
 
 
     -- | Construct an empty unique node graph.
@@ -80,7 +78,7 @@ instance VulgrGraph (UniqueNodeGraph n r) where
     emptyGraph = UniqueNodeGraph H.empty empty
 
 
-    -- | Construct and edge between the node at 'n1' and the node at 'n2'. The 'relationData'
+    -- | Construct an edge between the node at 'n1' and the node at 'n2'. The 'relationData'
     -- tracks metadata about the relationship - labels, properties, direction etc...
     --
     consEdge n1 n2 relationData (UniqueNodeGraph m g) =
@@ -98,6 +96,10 @@ instance VulgrGraph (UniqueNodeGraph n r) where
             let [newNid] = newNodes 1 g
                 m'       = H.insert ndata newNid m
             in  (newNid, UniqueNodeGraph m' (insNode (newNid, ndata) g))
+
+    extract = unGraph
+
+
 
 
 -- | Convenience method to pretty print the graph.

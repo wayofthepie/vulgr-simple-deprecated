@@ -90,7 +90,7 @@ data RelationData = RelationData
 instance Graphable GradleDependencySpec where
     type GNodeData GradleDependencySpec = NodeData
     type GRelationData GradleDependencySpec = RelationData
-    type GResult GradleDependencySpec = (UniqueNodeGraph NodeData RelationData)
+    type GResult GradleDependencySpec = UniqueNodeGraph NodeData RelationData
     graph gradleDeps =
        let rootNode  = NodeData (gDepName gradleDeps) (gDepVersion gradleDeps) []
            (_, initGraph) = consNode rootNode emptyGraph
@@ -98,11 +98,10 @@ instance Graphable GradleDependencySpec where
        in  foldr (\config g -> parseConfig g rootNode config) initGraph configs
 
 
-
 parseConfig :: UniqueNodeGraph NodeData RelationData
             -> NodeData
             -> Configuration
-            ->  UniqueNodeGraph NodeData RelationData
+            -> UniqueNodeGraph NodeData RelationData
 parseConfig g _ (Configuration _ _ Nothing)   = g
 parseConfig g _ (Configuration _ _ (Just [])) = g
 parseConfig g root (Configuration configName _ (Just deps)) = do
