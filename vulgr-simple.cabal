@@ -36,10 +36,12 @@ library
     , mtl
     , parallel
     , resourcet
+    , resource-pool
     , retry
     , servant
     , servant-server
     , text
+    , time
     , transformers
     , unordered-containers
     , vector

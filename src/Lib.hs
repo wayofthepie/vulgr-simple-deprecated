@@ -10,6 +10,8 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Either
 import Data.Aeson
 import Data.Monoid ((<>))
+import Data.Pool
+import Data.Time.Clock
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.HashMap.Strict as M
@@ -33,8 +35,8 @@ type API =
     :<|> "hello" :> Get '[JSON] T.Text
 
 
-newtype App a = App { runApp :: ReaderT Neo.Connection IO a }
-    deriving (Monad, Functor, Applicative, MonadReader Neo.Connection, MonadIO)
+newtype App a = App { runApp :: ReaderT (Pool Neo.Connection) IO a }
+    deriving (Monad, Functor, Applicative, MonadReader (Pool Neo.Connection), MonadIO)
 
 startApp :: Configuration -> IO ()
 startApp (Configuration host port user pass) =
@@ -42,35 +44,38 @@ startApp (Configuration host port user pass) =
         userBs = TE.encodeUtf8 user
         passBs = TE.encodeUtf8 pass
     in do
-        conn <- Neo.newAuthConnection hostBs port (userBs, passBs)
-        run 8080 (app conn)
+        pool  <- createPool (Neo.newAuthConnection hostBs port (userBs, passBs))
+                            (\c -> putStrLn "Destroying... Haha not!" ) -- fixme, destroy connections!
+                            6
+                            10
+                            10
+        run 8080 (app pool)
 
-app :: Neo.Connection -> Application
+app :: Pool Neo.Connection -> Application
 app conn = serve api (readerServer conn)
 
 api :: Proxy API
 api = Proxy
 
-readerServer :: Neo.Connection -> Server API
-readerServer conn = enter (Nat (runAppT conn)) readerServerT
+readerServer :: Pool Neo.Connection -> Server API
+readerServer pool = enter (Nat (runAppT pool)) readerServerT
 
 readerServerT :: ServerT API App
 readerServerT = graphDeps :<|> hello
 
-runAppT :: Neo.Connection -> App a -> EitherT ServantErr IO a
-runAppT conn action = liftIO (runReaderT (runApp action) conn)
+runAppT :: Pool Neo.Connection -> App a -> EitherT ServantErr IO a
+runAppT pool action = liftIO (runReaderT (runApp action) pool)
 
 
 graphDeps :: LongNpmDependencySpec -> App T.Text
 graphDeps gdeps = do
     let g = graph gdeps
-    conn <- ask
-    pg <- liftIO $ persist g conn
-    pure $ mconcat pg
-{-    eitherResule <-  liftIO (pure . Right . pretty $ g)
+    pool <- ask
+    eitherResult <- liftIO $ persist g pool
+--    eitherResult <-  liftIO (pure . Right . pretty $ g)
     case eitherResult of
-        Right r -> pure r
-        Left err-> pure $ (fst err) <> " : " <> (snd err) -}
+        Right _ -> pure "Created."
+        Left err-> pure $ (fst err) <> " : " <> (snd err)
 
 hello :: App T.Text
 hello = pure "hello!!"

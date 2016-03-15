@@ -61,7 +61,7 @@ graph' longNpmSpec =
         root $ initGraph root
   where
     initGraph n = snd $ consNode n emptyGraph
-    root = NodeData [("name", Just $ name longNpmSpec), ("version", version longNpmSpec)] []
+    root = NodeData [("name", name longNpmSpec), ("version", "VERSION")] ["Npm"]
 
 parseDirect :: Maybe Dependencies
             -> Maybe DevDependencies
@@ -95,8 +95,8 @@ parseDevDeps maybeDevDeps (parentId, parentNode) root g =
                   -> UniqueNodeGraph NodeData RelationData
                   -> UniqueNodeGraph NodeData RelationData
     createAndLink pid (k,v) g =
-        let thisNode         = NodeData [("name", Just k), ("version", Just v)] []
-            relationData     = RelationData [("root", Just "ddd"), ("type", Just "devDependency")] []
+        let thisNode         = NodeData [("name", k), ("version", v)] ["Npm"]
+            relationData     = RelationData [("root", "ddd"), ("type", "devDependency")] ["DevDependency"]
             (thisNodeId, g') = consNode thisNode g
             g''              = consEdge pid thisNodeId relationData g
         in  g''
@@ -120,9 +120,9 @@ parseDependency :: T.Text
                 -> UniqueNodeGraph NodeData RelationData
                 -> UniqueNodeGraph NodeData RelationData
 parseDependency depName depInfo parentNodeId root depType g =
-    let thisNode = NodeData [("name", Just depName), ("version", diVersion depInfo)] []
+    let thisNode = NodeData [("name", depName), ("version", "VERSION")] ["Npm"]
         (thisNodeId,g') = consNode thisNode g
-        g'' = consEdge parentNodeId thisNodeId (RelationData [("root", Just "fff"), ("type", Just depType)] []) g'
+        g'' = consEdge parentNodeId thisNodeId (RelationData [("root", "fff"), ("type", depType)] []) g'
     in parseDirect (diDependencies depInfo) (diDevDependencies depInfo) (thisNodeId, thisNode) root g''
 
 

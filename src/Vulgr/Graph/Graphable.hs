@@ -28,6 +28,10 @@ import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Debug.Trace
 
+
+--------------------------------------------------------------------------------
+-- Nodes and Relationships
+
 -- | The constraints a node must have to be graphable.
 --
 type NodeConstraints n = (Eq n, Hashable n, Show n)
@@ -35,19 +39,24 @@ type NodeConstraints n = (Eq n, Hashable n, Show n)
 
 -- | The data to be stored in nodes
 data NodeData = NodeData
-    { nodeProps :: [(T.Text, Maybe T.Text)]
+    { nodeProps :: [(T.Text, T.Text)]
     , nodeLabels  :: [T.Text]
     } deriving (Eq, Show)
+
 
 instance Hashable NodeData where
     hashWithSalt s (NodeData ps ls) = s + hash ps + hash ls
 
+
 -- | The data to be stored in relationships.
 data RelationData = RelationData
-    { relationProps :: [(T.Text, Maybe T.Text)]
+    { relationProps :: [(T.Text, T.Text)]
     , relationLabels :: [T.Text]
     } deriving (Eq, Show)
 
+
+--------------------------------------------------------------------------------
+-- Graphable typeclass
 
 -- | A Graphable specification data type s where 'n' is the type of its node data and
 -- 'r' is the type of its relationship data.
@@ -60,6 +69,9 @@ class Graphable s where
           => s
           -> UniqueNodeGraph NodeData RelationData
 
+
+--------------------------------------------------------------------------------
+-- Default Graph
 
 -- | A graph with unique nodes.
 --
