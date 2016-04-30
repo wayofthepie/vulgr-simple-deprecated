@@ -25,7 +25,7 @@ import Vulgr.Configuration (Configuration(..))
 import Vulgr.Dependency.Gradle
 import Vulgr.Dependency.Npm
 import Vulgr.Graph.Graphable (pretty)
-import Vulgr.Graph.Persist (persist)
+--import Vulgr.Graph.Persist (persist)
 
 import Debug.Trace
 
@@ -70,9 +70,7 @@ runAppT pool action = liftIO (runReaderT (runApp action) pool)
 graphDeps :: LongNpmDependencySpec -> App T.Text
 graphDeps gdeps = do
     let g = graph gdeps
-    pool <- ask
-    eitherResult <- liftIO $ persist g pool
---    eitherResult <-  liftIO (pure . Right . pretty $ g)
+    eitherResult <-  (pure . Right . pretty $ g)
     case eitherResult of
         Right _ -> pure "Created."
         Left err-> pure $ (fst err) <> " : " <> (snd err)

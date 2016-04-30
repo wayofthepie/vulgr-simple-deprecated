@@ -19,7 +19,7 @@ import Database.Neo4j.Types
 import Vulgr.Graph.Graphable
 
 import Debug.Trace
-
+{-
 persist :: UniqueNodeGraph NodeData RelationData -> Pool Neo.Connection -> IO (Either TC.TransError ())
 persist g pool = withResource pool $ \conn -> do
     let gr = extract g
@@ -74,3 +74,4 @@ n4jBatch conn action = flip Neo.runNeo4j conn $
 n4jTransaction :: Neo.Connection -> TC.Transaction a ->  IO (Either TC.TransError a)
 n4jTransaction conn action = flip Neo.runNeo4j conn $
     TC.runTransaction action
+    -}
